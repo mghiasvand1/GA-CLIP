@@ -16,8 +16,8 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 IMG_DATA = "/kaggle/input/coco-image-caption/train2014/train2014"
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 64
-EPOCHS = 7
+BATCH_SIZE = 80
+EPOCHS = 8
 LR = 1e-4
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
@@ -114,8 +114,7 @@ login(token=API_KEY)
 fix_seed(SEED)
 processor = CLIPProcessor.from_pretrained(MODEL_NAME)
 device = torch.device("cuda")
-model = GA_CLIP()
-model = nn.DataParallel(model, device_ids=[0, 1]).to(device)
+model = GA_CLIP().to(device)
 optimizer = AdamW(
     [p for p in model.parameters() if p.requires_grad], lr=LR, weight_decay=WD
 )
@@ -348,4 +347,4 @@ def fine_tune():
         pbar.set_description(
             f"Epoch {epoch + 1}/{EPOCHS} | Training losses [{loss_str}]"
         )
-    model.module.save_params()
+    model.save_params()
