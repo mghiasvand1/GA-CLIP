@@ -308,7 +308,7 @@ def fine_tune():
             meta_L1 = [meta[i] for i in keep_idx_L1]
             meta_L2 = [meta[i] for i in keep_idx_L2]
             meta_L3 = [meta[i] for i in keep_idx_L3]
-            with torch.autocast("cuda"):
+            with torch.autocast(device):
                 logits = model(
                     image_embeds, gran_embeds[keep_idx_L1], cap_embeds[keep_idx_L1]
                 )
