@@ -16,9 +16,9 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 IMG_DATA = "/kaggle/input/coco-image-caption/train2014/train2014"
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 80
-EPOCHS = 8
-LR = 3e-4
+BATCH_SIZE = 64
+EPOCHS = 7
+LR = 1e-4
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
 
