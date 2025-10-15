@@ -35,27 +35,30 @@ def fix_seed(seed):
 
 
 class GA_CLIP(nn.Module):
-    def __init__(self):
+    def __init__(self, device_freeze, device_tune):
         super().__init__()
         clip = CLIPModel.from_pretrained(MODEL_NAME)
-        self.vision_model = clip.vision_model
-        self.text_model = clip.text_model
-        self.linear_caption = nn.Linear(512, 512, bias=False)
-        self.linear_fuse = nn.Linear(1280, 512, bias=False)
+        self.device_freeze = torch.device(device_freeze)
+        self.device_tune = torch.device(device_tune)
+        self.vision_model = clip.vision_model.to(self.device_freeze)
+        self.text_model = clip.text_model.to(self.device_tune)
+        self.linear_caption = nn.Linear(512, 512, bias=False).to(self.device_tune)
+        self.linear_fuse = nn.Linear(1280, 512, bias=False).to(self.device_tune)
         with torch.no_grad():
-            self.linear_caption.weight.copy_(clip.text_projection.weight)
+            self.linear_caption.weight.copy_(
+                clip.text_projection.weight.to(self.device_tune)
+            )
             self.linear_fuse.weight.copy_(
                 torch.cat(
                     [
-                        clip.visual_projection.weight,
-                        clip.text_projection.weight,
+                        clip.visual_projection.weight.to(self.device_tune),
+                        clip.text_projection.weight.to(self.device_tune),
                     ],
                     dim=1,
                 )
             )
         for p in self.vision_model.parameters():
             p.requires_grad = False
-
         for name, param in self.text_model.named_parameters():
             if "bias" not in name:
                 param.requires_grad = False
@@ -88,7 +91,7 @@ class GA_CLIP(nn.Module):
     @torch.no_grad()
     def encode_image(self, pixel_values):
         image_outputs = self.vision_model(pixel_values)
-        return image_outputs.pooler_output
+        return image_outputs.pooler_output.to(self.device_tune)
 
     def encode_text(self, input_ids, attention_mask):
         text_outputs = self.text_model(
@@ -113,8 +116,7 @@ display(
 login(token=API_KEY)
 fix_seed(SEED)
 processor = CLIPProcessor.from_pretrained(MODEL_NAME)
-device = torch.device("cuda")
-model = GA_CLIP().to(device)
+model = GA_CLIP("cuda:0", "cuda:1")
 optimizer = AdamW(
     [p for p in model.parameters() if p.requires_grad], lr=LR, weight_decay=WD
 )
@@ -277,15 +279,14 @@ def fine_tune():
     total_steps = len(loader) * EPOCHS
     pbar = tqdm(total=total_steps, unit="batch")
     epoch_losses = []
-    scaler = torch.GradScaler("cuda")
     model.train()
     for epoch in range(EPOCHS):
         epoch_loss = 0.0
         num_batches = 0
         for img_inputs, gran_inputs, cap_inputs, meta in loader:
-            img_inputs = {k: v.to(device) for k, v in img_inputs.items()}
-            gran_inputs = {k: v.to(device) for k, v in gran_inputs.items()}
-            cap_inputs = {k: v.to(device) for k, v in cap_inputs.items()}
+            img_inputs = {k: v.to(model.device_freeze) for k, v in img_inputs.items()}
+            gran_inputs = {k: v.to(model.device_tune) for k, v in gran_inputs.items()}
+            cap_inputs = {k: v.to(model.device_tune) for k, v in cap_inputs.items()}
             image_embeds = model.encode_image(img_inputs["pixel_values"])
             gran_embeds = model.encode_text(
                 gran_inputs["input_ids"], gran_inputs["attention_mask"]
@@ -308,36 +309,30 @@ def fine_tune():
             meta_L1 = [meta[i] for i in keep_idx_L1]
             meta_L2 = [meta[i] for i in keep_idx_L2]
             meta_L3 = [meta[i] for i in keep_idx_L3]
-            with torch.autocast("cuda"):
-                logits = model(
-                    image_embeds, gran_embeds[keep_idx_L1], cap_embeds[keep_idx_L1]
-                )
-                L1 = CL(logits, meta_L1)
-                logits = model(
-                    torch.stack(
-                        [image_embeds[ids.index(m["image_id"])] for m in meta_L2]
-                    ),
-                    gran_embeds[keep_idx_L2],
-                    cap_embeds[keep_idx_L2],
-                )
-                L2 = NL(logits, meta_L2)
-                logits = model(
-                    torch.stack(
-                        [image_embeds[ids.index(m["image_id"])] for m in meta_L3]
-                    ),
-                    gran_embeds[keep_idx_L3],
-                    cap_embeds[keep_idx_L3],
-                )
-                L3 = NL(logits, meta_L3)
-                loss = (
-                    LOSS_WEIGHTS["L1"] * L1
-                    + LOSS_WEIGHTS["L2"] * L2
-                    + LOSS_WEIGHTS["L3"] * L3
-                )
+            logits = model(
+                image_embeds, gran_embeds[keep_idx_L1], cap_embeds[keep_idx_L1]
+            )
+            L1 = CL(logits, meta_L1)
+            logits = model(
+                torch.stack([image_embeds[ids.index(m["image_id"])] for m in meta_L2]),
+                gran_embeds[keep_idx_L2],
+                cap_embeds[keep_idx_L2],
+            )
+            L2 = NL(logits, meta_L2)
+            logits = model(
+                torch.stack([image_embeds[ids.index(m["image_id"])] for m in meta_L3]),
+                gran_embeds[keep_idx_L3],
+                cap_embeds[keep_idx_L3],
+            )
+            L3 = NL(logits, meta_L3)
+            loss = (
+                LOSS_WEIGHTS["L1"] * L1
+                + LOSS_WEIGHTS["L2"] * L2
+                + LOSS_WEIGHTS["L3"] * L3
+            )
             optimizer.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            loss.backward()
+            optimizer.step()
             epoch_loss += loss.item()
             num_batches += 1
             pbar.update(1)
