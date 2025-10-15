@@ -16,8 +16,8 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 IMG_DATA = "/kaggle/input/coco-image-caption/train2014/train2014"
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 100
-EPOCHS = 10
+BATCH_SIZE = 80
+EPOCHS = 8
 LR = 3e-4
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
@@ -87,12 +87,12 @@ class GA_CLIP(nn.Module):
 
     @torch.no_grad()
     def encode_image(self, pixel_values):
-        image_outputs = self.vision_model(pixel_values, return_dict=True)
+        image_outputs = self.vision_model(pixel_values)
         return image_outputs.pooler_output
 
     def encode_text(self, input_ids, attention_mask):
         text_outputs = self.text_model(
-            input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+            input_ids=input_ids, attention_mask=attention_mask
         )
         return text_outputs.pooler_output
 
@@ -273,7 +273,6 @@ def fine_tune():
         collate_fn=collate_fn,
         num_workers=4,
         pin_memory=True,
-        prefetch_factor=4,
     )
     total_steps = len(loader) * EPOCHS
     pbar = tqdm(total=total_steps, unit="batch")
@@ -341,7 +340,6 @@ def fine_tune():
             scaler.update()
             epoch_loss += loss.item()
             num_batches += 1
-            torch.cuda.empty_cache()
             pbar.update(1)
         avg_loss = epoch_loss / num_batches if num_batches > 0 else float("inf")
         epoch_losses.append(avg_loss)
