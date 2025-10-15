@@ -91,16 +91,10 @@ class GA_CLIP(nn.Module):
         return image_outputs.pooler_output
 
     def encode_text(self, input_ids, attention_mask):
-        all_pooler_outputs = []
-        for start_idx in range(0, input_ids.size(0), BATCH_SIZE):
-            end_idx = min(start_idx + BATCH_SIZE, input_ids.size(0))
-            chunk_input_ids = input_ids[start_idx:end_idx]
-            chunk_attention_mask = attention_mask[start_idx:end_idx]
-            text_outputs = self.text_model(
-                input_ids=chunk_input_ids, attention_mask=chunk_attention_mask
-            )
-            all_pooler_outputs.append(text_outputs.pooler_output)
-        return torch.cat(all_pooler_outputs, dim=0)
+        text_outputs = self.text_model(
+            input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+        )
+        return text_outputs.pooler_output
 
     def forward(self, img_emb, gran_emb, cap_emb):
         cap_proj = nn.functional.normalize(self.linear_caption(cap_emb), p=2, dim=-1)
