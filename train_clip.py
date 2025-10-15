@@ -277,7 +277,7 @@ def fine_tune():
     total_steps = len(loader) * EPOCHS
     pbar = tqdm(total=total_steps, unit="batch")
     epoch_losses = []
-    scaler = torch.GradScaler(device)
+    scaler = torch.GradScaler("cuda")
     model.train()
     for epoch in range(EPOCHS):
         epoch_loss = 0.0
@@ -308,7 +308,7 @@ def fine_tune():
             meta_L1 = [meta[i] for i in keep_idx_L1]
             meta_L2 = [meta[i] for i in keep_idx_L2]
             meta_L3 = [meta[i] for i in keep_idx_L3]
-            with torch.autocast(device):
+            with torch.autocast("cuda"):
                 logits = model(
                     image_embeds, gran_embeds[keep_idx_L1], cap_embeds[keep_idx_L1]
                 )
