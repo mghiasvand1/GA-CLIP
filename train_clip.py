@@ -114,7 +114,8 @@ login(token=API_KEY)
 fix_seed(SEED)
 processor = CLIPProcessor.from_pretrained(MODEL_NAME)
 device = torch.device("cuda")
-model = GA_CLIP().to(device)
+model = GA_CLIP()
+model = nn.DataParallel(model, device_ids=[0, 1]).to(device)
 optimizer = AdamW(
     [p for p in model.parameters() if p.requires_grad], lr=LR, weight_decay=WD
 )
@@ -347,4 +348,4 @@ def fine_tune():
         pbar.set_description(
             f"Epoch {epoch + 1}/{EPOCHS} | Training losses [{loss_str}]"
         )
-    model.save_params()
+    model.module.save_params()
