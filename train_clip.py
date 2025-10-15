@@ -16,8 +16,8 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 IMG_DATA = "/kaggle/input/coco-image-caption/train2014/train2014"
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 80
-EPOCHS = 8
+BATCH_SIZE = 64
+EPOCHS = 7
 LR = 1e-4
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
@@ -99,7 +99,9 @@ class GA_CLIP(nn.Module):
             text_outputs = self.text_model(
                 input_ids=chunk_input_ids, attention_mask=chunk_attention_mask
             )
-            all_pooler_outputs.append(text_outputs.pooler_output)
+            all_pooler_outputs.append(text_outputs.pooler_output.cpu())
+            del text_outputs
+            torch.cuda.empty_cache()
         return torch.cat(all_pooler_outputs, dim=0)
 
     def forward(self, img_emb, gran_emb, cap_emb):
@@ -295,10 +297,10 @@ def fine_tune():
             image_embeds = model.encode_image(img_inputs["pixel_values"])
             gran_embeds = model.encode_text(
                 gran_inputs["input_ids"], gran_inputs["attention_mask"]
-            )
+            ).to(device)
             cap_embeds = model.encode_text(
                 cap_inputs["input_ids"], cap_inputs["attention_mask"]
-            )
+            ).to(device)
             ids = [_["image_id"] for _ in meta if _["status"] == "Pos"]
             keep_idx_L1 = [i for i, m in enumerate(meta) if m["status"] == "Pos"]
             keep_idx_L2 = [
