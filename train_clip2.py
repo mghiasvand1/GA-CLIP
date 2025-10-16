@@ -280,17 +280,17 @@ def fine_tune():
             meta_pos_interneg = [meta[i] for i in keep_idx_L2]
             meta_pos_intraneg = [meta[i] for i in keep_idx_L3]
             imageid_to_unique = {meta_pos[i]["image_id"]: i for i in unique_indices}
-            for u_idx in unique_indices:
+            for local_idx, u_idx in enumerate(unique_indices):
                 img_id = meta_pos[u_idx]["image_id"]
-                map_index["pos"]["i2pt"][u_idx] = [
+                map_index["pos"]["i2pt"][local_idx] = [
                     i for i, m in enumerate(meta_pos) if m["image_id"] == img_id
                 ]
-                map_index["pos_interneg"]["i2pt"][u_idx] = [
+                map_index["pos_interneg"]["i2pt"][local_idx] = [
                     i
                     for i, m in enumerate(meta_pos_interneg)
                     if m["image_id"] == img_id and m["status"] == "Pos"
                 ]
-                map_index["pos_intraneg"]["i2pt"][u_idx] = [
+                map_index["pos_intraneg"]["i2pt"][local_idx] = [
                     i
                     for i, m in enumerate(meta_pos_intraneg)
                     if m["image_id"] == img_id and m["status"] == "Pos"
