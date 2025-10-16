@@ -215,12 +215,12 @@ def collate_fn(batch):
 
 
 def CL(logits, meta):
-    image_ids = torch.tensor([m["image_id"] for m in meta], device=logits.device)
+    image_ids = torch.tensor([m["image_id"] for m in meta])
     mask = (
         (image_ids.unsqueeze(1) != image_ids.unsqueeze(0)).float().fill_diagonal_(1.0)
     )
     logits = logits.masked_fill(mask == 0, float("-inf"))
-    labels = torch.arange(logits.shape[0], device=logits.device)
+    labels = torch.arange(logits.shape[0])
     loss_i2t = nn.functional.cross_entropy(logits, labels)
     loss_t2i = nn.functional.cross_entropy(logits.t(), labels)
     return (loss_i2t + loss_t2i) / 2
@@ -255,11 +255,7 @@ def NL(logits, meta):
             img_loss.append(loss)
         if img_loss:
             batch_loss.append(torch.stack(img_loss).mean())
-    return (
-        torch.stack(batch_loss).mean()
-        if batch_loss
-        else torch.tensor(0.0, device=logits.device)
-    )
+    return torch.stack(batch_loss).mean()
 
 
 def fine_tune():
