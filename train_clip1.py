@@ -235,7 +235,8 @@ def NL(logits, meta):
     for idx, img_id in enumerate(image_ids):
         if img_id not in image_to_indices:
             image_to_indices[img_id] = []
-        image_to_indices[img_id].append(idx)
+        if statuses[idx] == "Pos":
+            image_to_indices[img_id].append(idx)
     for img_id, indices in image_to_indices.items():
         img_loss = []
         for pos_idx in indices:
@@ -253,8 +254,7 @@ def NL(logits, meta):
             denominator = numerator + torch.sum(torch.exp(neg_similarities))
             loss = -torch.log(numerator / denominator)
             img_loss.append(loss)
-        if img_loss:
-            batch_loss.append(torch.stack(img_loss).mean())
+        batch_loss.append(torch.stack(img_loss).mean())
     return torch.stack(batch_loss).mean()
 
 
