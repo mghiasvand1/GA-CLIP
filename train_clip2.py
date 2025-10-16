@@ -39,7 +39,7 @@ class CLIP(nn.Module):
         super().__init__()
         clip = CLIPModel.from_pretrained(MODEL_NAME)
         self.vision_model = clip.vision_model
-        self.visual_projection = nn.Linear(512, 512, bias=False)
+        self.visual_projection = nn.Linear(768, 512, bias=False)
         self.text_model = clip.text_model
         self.text_projection = nn.Linear(512, 512, bias=False)
         with torch.no_grad():
