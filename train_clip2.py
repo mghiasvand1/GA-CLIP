@@ -16,8 +16,8 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 IMG_DATA = "/kaggle/input/coco-image-caption/train2014/train2014"
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 32
-EPOCHS = 7
+BATCH_SIZE = 100
+EPOCHS = 10
 LR = 1e-4
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
@@ -45,8 +45,10 @@ class CLIP(nn.Module):
         with torch.no_grad():
             self.visual_projection.weight.copy_(clip.visual_projection.weight)
             self.text_projection.weight.copy_(clip.text_projection.weight)
-        for p in list(self.vision_model.parameters()) + list(
-            self.visual_projection.parameters()
+        for p in (
+            list(self.vision_model.parameters())
+            + list(self.visual_projection.parameters())
+            + list(self.text_projection.parameters())
         ):
             p.requires_grad = False
         for name, param in self.text_model.named_parameters():
@@ -75,18 +77,23 @@ class CLIP(nn.Module):
 
     @torch.no_grad()
     def encode_image(self, pixel_values):
-        image_outputs = self.vision_model(pixel_values)
-        return image_outputs.pooler_output
+        image_outputs = self.vision_model(pixel_values).pooler_output
+        image_proj = nn.functional.normalize(
+            self.visual_projection(image_outputs), p=2, dim=-1
+        )
+        return image_proj
 
     def encode_text(self, input_ids, attention_mask):
         text_outputs = self.text_model(
             input_ids=input_ids, attention_mask=attention_mask
-        )
-        return text_outputs.pooler_output
+        ).pooler_output
+        with torch.no_grad():
+            text_proj = nn.functional.normalize(
+                self.text_projection(text_outputs), p=2, dim=-1
+            )
+        return text_proj
 
-    def forward(self, img_emb, text_emb):
-        img_proj = nn.functional.normalize(self.visual_projection(img_emb), p=2, dim=-1)
-        text_proj = nn.functional.normalize(self.text_projection(text_emb), p=2, dim=-1)
+    def forward(self, img_proj, text_proj):
         logits = img_proj @ text_proj.t()
         return logits
 
