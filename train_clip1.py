@@ -16,8 +16,8 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 IMG_DATA = "/kaggle/input/coco-image-caption/train2014/train2014"
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 32
-EPOCHS = 7
+BATCH_SIZE = 80
+EPOCHS = 8
 LR = 1e-4
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
@@ -218,9 +218,9 @@ def CL(logits, meta):
     image_ids = torch.tensor([m["image_id"] for m in meta])
     mask = (
         (image_ids.unsqueeze(1) != image_ids.unsqueeze(0)).float().fill_diagonal_(1.0)
-    )
+    ).to(logits.device)
     logits = logits.masked_fill(mask == 0, float("-inf"))
-    labels = torch.arange(logits.shape[0])
+    labels = torch.arange(logits.shape[0], device=logits.device)
     loss_i2t = nn.functional.cross_entropy(logits, labels)
     loss_t2i = nn.functional.cross_entropy(logits.t(), labels)
     return (loss_i2t + loss_t2i) / 2
