@@ -18,7 +18,7 @@ API_KEY = ""
 SEED = 1
 BATCH_SIZE = 100
 EPOCHS = 10
-LR = 1e-4
+LR = 1e-5
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
 
@@ -87,10 +87,9 @@ class CLIP(nn.Module):
         text_outputs = self.text_model(
             input_ids=input_ids, attention_mask=attention_mask
         ).pooler_output
-        with torch.no_grad():
-            text_proj = nn.functional.normalize(
-                self.text_projection(text_outputs), p=2, dim=-1
-            )
+        text_proj = nn.functional.normalize(
+            self.text_projection(text_outputs), p=2, dim=-1
+        )
         return text_proj
 
     def forward(self, img_proj, text_proj):
