@@ -16,8 +16,8 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 IMG_DATA = "/kaggle/input/coco-image-caption/train2014/train2014"
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 64
-EPOCHS = 7
+BATCH_SIZE = 80
+EPOCHS = 8
 LR = 1e-4
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
@@ -251,9 +251,8 @@ def NL(logits, meta):
             neg_similarities = logits[pos_idx, neg_indices]
             numerator = torch.exp(pos_similarity)
             denominator = numerator + torch.sum(torch.exp(neg_similarities))
-            if denominator > 1e-8:
-                loss = -torch.log(numerator / denominator)
-                img_loss.append(loss)
+            loss = -torch.log(numerator / denominator)
+            img_loss.append(loss)
         if img_loss:
             batch_loss.append(torch.stack(img_loss).mean())
     return (
@@ -276,7 +275,6 @@ def fine_tune():
     total_steps = len(loader) * EPOCHS
     pbar = tqdm(total=total_steps, unit="batch")
     epoch_losses = []
-    scaler = torch.GradScaler("cuda")
     model.train()
     for epoch in range(EPOCHS):
         epoch_loss = 0.0
@@ -306,32 +304,30 @@ def fine_tune():
             meta_L1 = [meta[i] for i in keep_idx_L1]
             meta_L2 = [meta[i] for i in keep_idx_L2]
             meta_L3 = [meta[i] for i in keep_idx_L3]
-            with torch.autocast("cuda"):
-                logits = model(
-                    image_embeds, gran_embeds[keep_idx_L1], cap_embeds[keep_idx_L1]
-                )
-                L1 = CL(logits, meta_L1)
-                logits = model(
-                    image_embeds,
-                    gran_embeds[keep_idx_L2],
-                    cap_embeds[keep_idx_L2],
-                )
-                L2 = NL(logits, meta_L2)
-                logits = model(
-                    image_embeds,
-                    gran_embeds[keep_idx_L3],
-                    cap_embeds[keep_idx_L3],
-                )
-                L3 = NL(logits, meta_L3)
-                loss = (
-                    LOSS_WEIGHTS["L1"] * L1
-                    + LOSS_WEIGHTS["L2"] * L2
-                    + LOSS_WEIGHTS["L3"] * L3
-                )
+            logits = model(
+                image_embeds, gran_embeds[keep_idx_L1], cap_embeds[keep_idx_L1]
+            )
+            L1 = CL(logits, meta_L1)
+            logits = model(
+                image_embeds,
+                gran_embeds[keep_idx_L2],
+                cap_embeds[keep_idx_L2],
+            )
+            L2 = NL(logits, meta_L2)
+            logits = model(
+                image_embeds,
+                gran_embeds[keep_idx_L3],
+                cap_embeds[keep_idx_L3],
+            )
+            L3 = NL(logits, meta_L3)
+            loss = (
+                LOSS_WEIGHTS["L1"] * L1
+                + LOSS_WEIGHTS["L2"] * L2
+                + LOSS_WEIGHTS["L3"] * L3
+            )
             optimizer.zero_grad(set_to_none=True)
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            loss.backward()
+            optimizer.step()
             epoch_loss += loss.item()
             num_batches += 1
             pbar.update(1)
