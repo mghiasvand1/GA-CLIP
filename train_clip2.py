@@ -39,23 +39,16 @@ class GA_CLIP(nn.Module):
         super().__init__()
         clip = CLIPModel.from_pretrained(MODEL_NAME)
         self.vision_model = clip.vision_model
+        self.visual_projection = nn.Linear(512, 512, bias=False)
         self.text_model = clip.text_model
-        self.linear_caption = nn.Linear(512, 512, bias=False)
-        self.linear_fuse = nn.Linear(1280, 512, bias=False)
+        self.text_projection = nn.Linear(512, 512, bias=False)
         with torch.no_grad():
-            self.linear_caption.weight.copy_(clip.text_projection.weight)
-            self.linear_fuse.weight.copy_(
-                torch.cat(
-                    [
-                        clip.visual_projection.weight,
-                        clip.text_projection.weight,
-                    ],
-                    dim=1,
-                )
-            )
-        for p in self.vision_model.parameters():
+            self.visual_projection.weight.copy_(clip.visual_projection.weight)
+            self.text_projection.weight.copy_(clip.text_projection.weight)
+        for p in list(self.vision_model.parameters()) + list(
+            self.visual_projection.parameters()
+        ):
             p.requires_grad = False
-
         for name, param in self.text_model.named_parameters():
             if "bias" not in name:
                 param.requires_grad = False
@@ -65,23 +58,18 @@ class GA_CLIP(nn.Module):
         text_model_state = self.text_model.state_dict()
         text_model_state.update(params.get("text_model_biases"))
         self.text_model.load_state_dict(text_model_state)
-        linear_caption_state = self.linear_caption.state_dict()
-        linear_caption_state.update(params.get("linear_caption_weights"))
-        self.linear_caption.load_state_dict(linear_caption_state)
-        linear_fuse_state = self.linear_fuse.state_dict()
-        linear_fuse_state.update(params.get("linear_fuse_weights"))
-        self.linear_fuse.load_state_dict(linear_fuse_state)
+        text_projection_state = self.text_projection.state_dict()
+        text_projection_state.update(params.get("text_projection_weights"))
+        self.text_projection.load_state_dict(text_projection_state)
 
     def save_params(self):
         text_model_biases = {
             k: v for k, v in self.text_model.state_dict().items() if "bias" in k
         }
-        linear_caption_weights = self.linear_caption.state_dict()
-        linear_fuse_weights = self.linear_fuse.state_dict()
+        text_projection_weights = self.text_projection.state_dict()
         data = {
             "text_model_biases": text_model_biases,
-            "linear_caption_weights": linear_caption_weights,
-            "linear_fuse_weights": linear_fuse_weights,
+            "text_projection_weights": text_projection_weights,
         }
         torch.save(data, PARAMS_PATH)
 
@@ -92,16 +80,17 @@ class GA_CLIP(nn.Module):
 
     def encode_text(self, input_ids, attention_mask):
         text_outputs = self.text_model(
-            input_ids=input_ids, attention_mask=attention_mask, return_dict=True
+            input_ids=input_ids, attention_mask=attention_mask
         )
         return text_outputs.pooler_output
 
-    def forward(self, img_emb, gran_emb, cap_emb):
-        cap_proj = nn.functional.normalize(self.linear_caption(cap_emb), p=2, dim=-1)
-        fuse_proj = nn.functional.normalize(
-            self.linear_fuse(torch.cat([img_emb, gran_emb], dim=-1)), p=2, dim=-1
-        )
-        logits = fuse_proj @ cap_proj.t()
+    def forward(self, img_emb, text_emb):
+        with torch.no_grad():
+            img_proj = nn.functional.normalize(
+                self.visual_projection(img_emb), p=2, dim=-1
+            )
+        text_proj = nn.functional.normalize(self.text_projection(text_emb), p=2, dim=-1)
+        logits = img_proj @ text_proj.t()
         return logits
 
 
@@ -154,15 +143,12 @@ class ClipDataset(Dataset):
         entry = self.items_pos[idx]
         img_path = f"{IMG_DATA}/COCO_train2014_{str(entry['image_id']).zfill(12)}.jpg"
         image = Image.open(img_path).convert("RGB")
-        granularity, caption = entry["text"].split(": ", 1)
+        text = entry["text"]
         negs = self.items_neg.get(entry["image_id"])
-        for n in negs:
-            n["granularity"], n["caption"] = n["text"].split(": ", 1)
         return {
             **entry,
             "image": image,
-            "granularity": granularity,
-            "caption": caption,
+            "text": text,
             "negatives": negs,
         }
 
@@ -191,75 +177,58 @@ class UniqueImageBatchSampler(Sampler):
 
 
 def collate_fn(batch):
-    images, granularities, captions, meta = [], [], [], []
+    images, texts, meta = [], [], []
     for item in batch:
         images.append(item["image"])
-        granularities.append(item["granularity"])
-        captions.append(item["caption"])
+        texts.append(item["text"])
         meta.append({k: item[k] for k in ("id", "image_id", "status")})
         negs = item.get("negatives")
         for n in negs:
-            granularities.append(n["granularity"])
-            captions.append(n["caption"])
+            texts.append(n["text"])
             meta.append({k: n[k] for k in ("id", "image_id", "status")})
     img_inputs = processor(
         images=images, return_tensors="pt", padding=True, truncation=True
     )
-    gran_inputs = processor(
-        text=granularities, return_tensors="pt", padding=True, truncation=True
+    text_inputs = processor(
+        text=texts, return_tensors="pt", padding=True, truncation=True
     )
-    cap_inputs = processor(
-        text=captions, return_tensors="pt", padding=True, truncation=True
-    )
-    return img_inputs, gran_inputs, cap_inputs, meta
+    return img_inputs, text_inputs, meta
 
 
-def CL(logits, meta):
-    image_ids = torch.tensor([m["image_id"] for m in meta], device=logits.device)
-    mask = (
-        (image_ids.unsqueeze(1) != image_ids.unsqueeze(0)).float().fill_diagonal_(1.0)
-    )
-    logits = logits.masked_fill(mask == 0, float("-inf"))
-    labels = torch.arange(logits.shape[0], device=logits.device)
-    loss_i2t = nn.functional.cross_entropy(logits, labels)
-    loss_t2i = nn.functional.cross_entropy(logits.t(), labels)
-    return (loss_i2t + loss_t2i) / 2
+def MPCL(logits, i2pt, t2pi):
+    i2t_losses = []
+    for img_idx, pos_text_indices in i2pt.items():
+        pos_logits = logits[img_idx, pos_text_indices]
+        denom_logits = logits[img_idx, :]
+        loss = -torch.log(
+            torch.sum(torch.exp(pos_logits)) / torch.sum(torch.exp(denom_logits))
+        )
+        i2t_losses.append(loss)
+    i2t_loss = torch.stack(i2t_losses).mean()
+    t2i_losses = []
+    for text_idx, img_idx in t2pi.items():
+        numerator = logits[img_idx, text_idx]
+        denominator = logits[:, text_idx]
+        loss = -torch.log(torch.exp(numerator) / torch.sum(torch.exp(denominator)))
+        t2i_losses.append(loss)
+    t2i_loss = torch.stack(t2i_losses).mean()
+    return 0.5 * (i2t_loss + t2i_loss)
 
 
-def NL(logits, meta):
-    ids = [m["id"] for m in meta]
-    image_ids = [m["image_id"] for m in meta]
-    statuses = [m["status"] for m in meta]
-    batch_loss = []
-    image_to_indices = {}
-    for idx, img_id in enumerate(image_ids):
-        if img_id not in image_to_indices:
-            image_to_indices[img_id] = []
-        image_to_indices[img_id].append(idx)
-    for img_id, indices in image_to_indices.items():
-        img_loss = []
-        for pos_idx in indices:
-            pos_id = ids[pos_idx]
-            neg_indices = [
-                i
-                for i in range(len(meta))
-                if statuses[i] != "Pos" and str(pos_id) in statuses[i]
-            ]
-            if not neg_indices:
-                continue
-            pos_similarity = logits[pos_idx, pos_idx]
-            neg_similarities = logits[pos_idx, neg_indices]
+def NL(logits, i2tp, t2nt):
+    batch_losses = []
+    for img_idx, pos_text_indices in i2tp.items():
+        img_losses = []
+        for pos_idx in pos_text_indices:
+            neg_indices = t2nt.get(pos_idx)
+            pos_similarity = logits[img_idx, pos_idx]
+            neg_similarities = logits[img_idx, neg_indices]
             numerator = torch.exp(pos_similarity)
             denominator = numerator + torch.sum(torch.exp(neg_similarities))
             loss = -torch.log(numerator / denominator)
-            img_loss.append(loss)
-        if img_loss:
-            batch_loss.append(torch.stack(img_loss).mean())
-    return (
-        torch.stack(batch_loss).mean()
-        if batch_loss
-        else torch.tensor(0.0, device=logits.device)
-    )
+            img_losses.append(loss)
+        batch_losses.append(torch.stack(img_losses).mean())
+    return torch.stack(batch_losses).mean()
 
 
 def fine_tune():
@@ -279,17 +248,7 @@ def fine_tune():
     for epoch in range(EPOCHS):
         epoch_loss = 0.0
         num_batches = 0
-        for img_inputs, gran_inputs, cap_inputs, meta in loader:
-            img_inputs = {k: v.to(device) for k, v in img_inputs.items()}
-            gran_inputs = {k: v.to(device) for k, v in gran_inputs.items()}
-            cap_inputs = {k: v.to(device) for k, v in cap_inputs.items()}
-            image_embeds = model.encode_image(img_inputs["pixel_values"])
-            gran_embeds = model.encode_text(
-                gran_inputs["input_ids"], gran_inputs["attention_mask"]
-            )
-            cap_embeds = model.encode_text(
-                cap_inputs["input_ids"], cap_inputs["attention_mask"]
-            )
+        for img_inputs, text_inputs, meta in loader:
             keep_idx_L1 = [i for i, m in enumerate(meta) if m["status"] == "Pos"]
             keep_idx_L2 = [
                 i
@@ -301,25 +260,78 @@ def fine_tune():
                 for i, m in enumerate(meta)
                 if m["status"] == "Pos" or "IntraNeg" in m["status"]
             ]
-            meta_L1 = [meta[i] for i in keep_idx_L1]
-            meta_L2 = [meta[i] for i in keep_idx_L2]
-            meta_L3 = [meta[i] for i in keep_idx_L3]
-            logits = model(
-                image_embeds, gran_embeds[keep_idx_L1], cap_embeds[keep_idx_L1]
+            meta_pos = meta[keep_idx_L1]
+            seen = set()
+            unique_indices = [
+                i
+                for i, m in enumerate(meta_pos)
+                if m["image_id"] not in seen and not seen.add(m["image_id"])
+            ]
+            img_inputs = {
+                k: v[unique_indices].to(device) for k, v in img_inputs.items()
+            }
+            map_index = {
+                "pos": {"i2pt": {}, "t2pi": {}},
+                "pos_interneg": {"i2pt": {}, "t2nt": {}},
+                "pos_intraneg": {"i2pt": {}, "t2nt": {}},
+            }
+            meta_pos_interneg = meta[keep_idx_L2]
+            meta_pos_intraneg = meta[keep_idx_L3]
+            imageid_to_unique = {meta_pos[i]["image_id"]: i for i in unique_indices}
+            for u_idx in unique_indices:
+                img_id = meta_pos[u_idx]["image_id"]
+                map_index["pos"]["i2pt"][u_idx] = [
+                    i for i, m in enumerate(meta_pos) if m["image_id"] == img_id
+                ]
+                map_index["pos_interneg"]["i2pt"][u_idx] = [
+                    i
+                    for i, m in enumerate(meta_pos_interneg)
+                    if m["image_id"] == img_id and m["status"] == "Pos"
+                ]
+                map_index["pos_intraneg"]["i2pt"][u_idx] = [
+                    i
+                    for i, m in enumerate(meta_pos_intraneg)
+                    if m["image_id"] == img_id and m["status"] == "Pos"
+                ]
+            for i, m in enumerate(meta_pos):
+                map_index["pos"]["t2pi"][i] = imageid_to_unique[m["image_id"]]
+            for i, m in enumerate(meta_pos_interneg):
+                if m["status"] == "Pos":
+                    neg_indices = [
+                        j
+                        for j, x in enumerate(meta_pos_interneg)
+                        if str(m["id"]) in x["status"]
+                    ]
+                    if neg_indices:
+                        map_index["pos_interneg"]["t2nt"][i] = neg_indices
+            for i, m in enumerate(meta_pos_intraneg):
+                if m["status"] == "Pos":
+                    neg_indices = [
+                        j
+                        for j, x in enumerate(meta_pos_intraneg)
+                        if str(m["id"]) in x["status"]
+                    ]
+                    if neg_indices:
+                        map_index["pos_intraneg"]["t2nt"][i] = neg_indices
+            text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+            image_embeds = model.encode_image(img_inputs["pixel_values"])
+            text_embeds = model.encode_text(
+                text_inputs["input_ids"], text_inputs["attention_mask"]
             )
-            L1 = CL(logits, meta_L1)
-            logits = model(
-                image_embeds,
-                gran_embeds[keep_idx_L2],
-                cap_embeds[keep_idx_L2],
+            logits = model(image_embeds, text_embeds[keep_idx_L1])
+            L1 = MPCL(logits, map_index["pos"]["i2pt"], map_index["pos"]["t2pi"])
+            logits = model(image_embeds, text_embeds[keep_idx_L2])
+            L2 = NL(
+                logits,
+                map_index["pos_interneg"]["i2pt"],
+                map_index["pos_interneg"]["t2nt"],
             )
-            L2 = NL(logits, meta_L2)
-            logits = model(
-                image_embeds,
-                gran_embeds[keep_idx_L3],
-                cap_embeds[keep_idx_L3],
+            logits = model(image_embeds, text_embeds[keep_idx_L3])
+            L3 = NL(
+                logits,
+                map_index["pos_intraneg"]["i2pt"],
+                map_index["pos_intraneg"]["t2nt"],
             )
-            L3 = NL(logits, meta_L3)
             loss = (
                 LOSS_WEIGHTS["L1"] * L1
                 + LOSS_WEIGHTS["L2"] * L2
