@@ -16,8 +16,8 @@ MODEL_NAME = "openai/clip-vit-base-patch32"
 IMG_DATA = "/kaggle/input/coco-image-caption/train2014/train2014"
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 80
-EPOCHS = 8
+BATCH_SIZE = 32
+EPOCHS = 7
 LR = 1e-4
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
@@ -85,10 +85,7 @@ class CLIP(nn.Module):
         return text_outputs.pooler_output
 
     def forward(self, img_emb, text_emb):
-        with torch.no_grad():
-            img_proj = nn.functional.normalize(
-                self.visual_projection(img_emb), p=2, dim=-1
-            )
+        img_proj = nn.functional.normalize(self.visual_projection(img_emb), p=2, dim=-1)
         text_proj = nn.functional.normalize(self.text_projection(text_emb), p=2, dim=-1)
         logits = img_proj @ text_proj.t()
         return logits
