@@ -238,8 +238,7 @@ def NL(logits, meta):
         image_to_indices[img_id].append(idx)
     for img_id, indices in image_to_indices.items():
         img_loss = []
-        pos_indices = [i for i in indices if statuses[i] == "Pos"]
-        for pos_idx in pos_indices:
+        for pos_idx in indices:
             pos_id = ids[pos_idx]
             neg_indices = [
                 i
@@ -293,7 +292,6 @@ def fine_tune():
             cap_embeds = model.encode_text(
                 cap_inputs["input_ids"], cap_inputs["attention_mask"]
             )
-            ids = [_["image_id"] for _ in meta if _["status"] == "Pos"]
             keep_idx_L1 = [i for i, m in enumerate(meta) if m["status"] == "Pos"]
             keep_idx_L2 = [
                 i
@@ -314,17 +312,13 @@ def fine_tune():
                 )
                 L1 = CL(logits, meta_L1)
                 logits = model(
-                    torch.stack(
-                        [image_embeds[ids.index(m["image_id"])] for m in meta_L2]
-                    ),
+                    image_embeds,
                     gran_embeds[keep_idx_L2],
                     cap_embeds[keep_idx_L2],
                 )
                 L2 = NL(logits, meta_L2)
                 logits = model(
-                    torch.stack(
-                        [image_embeds[ids.index(m["image_id"])] for m in meta_L3]
-                    ),
+                    image_embeds,
                     gran_embeds[keep_idx_L3],
                     cap_embeds[keep_idx_L3],
                 )
