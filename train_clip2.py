@@ -34,7 +34,7 @@ def fix_seed(seed):
         torch.backends.cudnn.benchmark = False
 
 
-class GA_CLIP(nn.Module):
+class CLIP(nn.Module):
     def __init__(self):
         super().__init__()
         clip = CLIPModel.from_pretrained(MODEL_NAME)
@@ -103,7 +103,7 @@ login(token=API_KEY)
 fix_seed(SEED)
 processor = CLIPProcessor.from_pretrained(MODEL_NAME)
 device = torch.device("cuda")
-model = GA_CLIP().to(device)
+model = CLIP().to(device)
 optimizer = AdamW(
     [p for p in model.parameters() if p.requires_grad], lr=LR, weight_decay=WD
 )
