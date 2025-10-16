@@ -262,7 +262,7 @@ def fine_tune():
                 for i, m in enumerate(meta)
                 if m["status"] == "Pos" or "IntraNeg" in m["status"]
             ]
-            meta_pos = meta[keep_idx_L1]
+            meta_pos = [meta[i] for i in keep_idx_L1]
             seen = set()
             unique_indices = [
                 i
@@ -277,8 +277,8 @@ def fine_tune():
                 "pos_interneg": {"i2pt": {}, "t2nt": {}},
                 "pos_intraneg": {"i2pt": {}, "t2nt": {}},
             }
-            meta_pos_interneg = meta[keep_idx_L2]
-            meta_pos_intraneg = meta[keep_idx_L3]
+            meta_pos_interneg = [meta[i] for i in keep_idx_L2]
+            meta_pos_intraneg = [meta[i] for i in keep_idx_L3]
             imageid_to_unique = {meta_pos[i]["image_id"]: i for i in unique_indices}
             for u_idx in unique_indices:
                 img_id = meta_pos[u_idx]["image_id"]
