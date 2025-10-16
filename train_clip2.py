@@ -221,6 +221,8 @@ def NL(logits, i2tp, t2nt):
         img_losses = []
         for pos_idx in pos_text_indices:
             neg_indices = t2nt.get(pos_idx)
+            if not neg_indices:
+                continue
             pos_similarity = logits[img_idx, pos_idx]
             neg_similarities = logits[img_idx, neg_indices]
             numerator = torch.exp(pos_similarity)
@@ -297,22 +299,18 @@ def fine_tune():
                 map_index["pos"]["t2pi"][i] = imageid_to_unique[m["image_id"]]
             for i, m in enumerate(meta_pos_interneg):
                 if m["status"] == "Pos":
-                    neg_indices = [
+                    map_index["pos_interneg"]["t2nt"][i] = [
                         j
                         for j, x in enumerate(meta_pos_interneg)
                         if str(m["id"]) in x["status"]
                     ]
-                    if neg_indices:
-                        map_index["pos_interneg"]["t2nt"][i] = neg_indices
             for i, m in enumerate(meta_pos_intraneg):
                 if m["status"] == "Pos":
-                    neg_indices = [
+                    map_index["pos_intraneg"]["t2nt"][i] = [
                         j
                         for j, x in enumerate(meta_pos_intraneg)
                         if str(m["id"]) in x["status"]
                     ]
-                    if neg_indices:
-                        map_index["pos_intraneg"]["t2nt"][i] = neg_indices
             text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
             image_embeds = model.encode_image(img_inputs["pixel_values"])
             text_embeds = model.encode_text(
