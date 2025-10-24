@@ -45,10 +45,8 @@ class CLIP(nn.Module):
         with torch.no_grad():
             self.visual_projection.weight.copy_(clip.visual_projection.weight)
             self.text_projection.weight.copy_(clip.text_projection.weight)
-        for p in (
-            list(self.vision_model.parameters())
-            + list(self.visual_projection.parameters())
-            + list(self.text_projection.parameters())
+        for p in list(self.vision_model.parameters()) + list(
+            self.visual_projection.parameters()
         ):
             p.requires_grad = False
         for name, param in self.text_model.named_parameters():
