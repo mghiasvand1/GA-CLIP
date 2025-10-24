@@ -80,16 +80,19 @@ class CLIP(nn.Module):
         text_proj = nn.functional.normalize(self.text_projection(text_outputs), dim=-1)
         return text_proj
 
-    def forward(self, img_inputs, text_inputs, keep_indices_list):
+    def forward(self, img_inputs, text_inputs, keep_indices_list=[]):
         image_embeds = self._encode_image(img_inputs["pixel_values"])
         text_embeds = self._encode_text(
             text_inputs["input_ids"], text_inputs["attention_mask"]
         )
-        logits_list = []
-        for keep_indices in keep_indices_list:
-            logits = image_embeds @ text_embeds[keep_indices].t()
-            logits_list.append(logits)
-        return logits_list
+        if keep_indices_list:
+            logits = []
+            for indices in keep_indices_list:
+                _logits = image_embeds @ text_embeds[indices].t()
+                logits.append(_logits)
+        else:
+            logits = image_embeds @ text_embeds.t()
+        return logits
 
 
 login(token=API_KEY)
