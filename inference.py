@@ -1,35 +1,29 @@
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, CLIPProcessor
 from huggingface_hub import login
-from train_clip import GA_CLIP
+from train_clip import CLIP
+import torch.nn as nn
 import torch
 
-API_KEY = ""
-MODEL_NAME_LM = "mghiasvand1/GA-CLIP_lm"
-PARAMS_PATH = "/kaggle/input/ga-clip-params/linear_params.pth"
-
-login(token=API_KEY)
+login(token="")
+processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+device = torch.device("cuda")
+lm = AutoModelForSeq2SeqLM.from_pretrained("mghiasvand1/GA-CLIP_lm").to(device)
+tokenizer = AutoTokenizer.from_pretrained("mghiasvand1/GA-CLIP_lm")
+model = CLIP().to(device)
+model.load_params("linear_params.pth")
+model.eval()
 
 
 @torch.no_grad()
 def inference(img, caption, pivot, alpha):
     try:
-        lm = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME_LM).to("cuda")
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME_LM)
-        processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-        model = GA_CLIP().to("cuda")
         if pivot == "text":
             image = [i.convert("RGB") for i in img]
         elif pivot == "image":
             image = img.convert("RGB")
-        model.load_params(PARAMS_PATH)
-        model.eval()
         try:
             first_prompts, second_prompts, prefixes, clip_prompt, seps = (
-                [],
-                [],
-                [],
-                [],
-                [],
+                [] for _ in range(5)
             )
             if pivot == "image":
                 for y in range(len(caption)):
@@ -45,7 +39,7 @@ def inference(img, caption, pivot, alpha):
                 truncation=True,
                 max_length=128,
             )
-            inputs = {key: tensor.to("cuda") for key, tensor in inputs.items()}
+            inputs = {key: tensor.to(device) for key, tensor in inputs.items()}
             outputs = lm.generate(**inputs, max_new_tokens=128)
             first_outputs = [
                 tokenizer.decode(output, skip_special_tokens=True) for output in outputs
@@ -73,7 +67,7 @@ def inference(img, caption, pivot, alpha):
                 truncation=True,
                 max_length=128,
             )
-            inputs = {key: tensor.to("cuda") for key, tensor in inputs.items()}
+            inputs = {key: tensor.to(device) for key, tensor in inputs.items()}
             outputs = lm.generate(**inputs, max_new_tokens=128)
             outputs = [
                 tokenizer.decode(output, skip_special_tokens=True) for output in outputs
@@ -105,73 +99,34 @@ def inference(img, caption, pivot, alpha):
                         prefixes.pop(_)
                 else:
                     flag = False
-            granularities, captions = [], []
-            for prompt in clip_prompt:
-                g, c = prompt.lower().split(": ", 1)
-                granularities.append(g)
-                captions.append(c)
             img_inputs = processor(
                 images=image, return_tensors="pt", padding=True, truncation=True
             )
-            img_inputs = {k: v.to("cuda") for k, v in img_inputs.items()}
-            image_embeds = model.encode_image(img_inputs["pixel_values"])
-            gran_len = len(granularities)
-            if pivot == "image":
-                image_embeds = image_embeds.repeat(gran_len, 1)
-            elif pivot == "text":
-                repeated_image_embeds = []
-                for i in range(image_embeds.size(0)):
-                    repeated_embed = image_embeds[i].unsqueeze(0).repeat(gran_len, 1)
-                    repeated_image_embeds.append(repeated_embed)
-                all_granularities, all_captions = [], []
-                for i in range(len(image)):
-                    all_granularities.extend(granularities)
-                    all_captions.extend(captions)
-                image_embeds = torch.cat(repeated_image_embeds, dim=0)
-                granularities = all_granularities
-                captions = all_captions
-            gran_inputs = processor(
-                text=granularities, return_tensors="pt", padding=True, truncation=True
+            img_inputs = {k: v.to(device) for k, v in img_inputs.items()}
+            clip_prompt = [prompt.lower() for prompt in clip_prompt]
+            text_inputs = processor(
+                text=clip_prompt, return_tensors="pt", padding=True, truncation=True
             )
-            gran_inputs = {k: v.to("cuda") for k, v in gran_inputs.items()}
-            gran_embeds = model.encode_text(
-                gran_inputs["input_ids"], gran_inputs["attention_mask"]
-            )
-            cap_inputs = processor(
-                text=captions, return_tensors="pt", padding=True, truncation=True
-            )
-            cap_inputs = {k: v.to("cuda") for k, v in cap_inputs.items()}
-            cap_embeds = model.encode_text(
-                cap_inputs["input_ids"], cap_inputs["attention_mask"]
-            )
-            logits = model(image_embeds, gran_embeds, cap_embeds)
-            logits_list = torch.diag(logits).tolist()
-            if pivot == "text":
-                image_logits = []
-                logits_list = [
-                    logits_list[i : i + gran_len]
-                    for i in range(0, len(logits_list), gran_len)
-                ]
-                for logit in logits_list:
-                    image_logits.append(logit)
+            text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+            logits = model(img_inputs, text_inputs).tolist()
             sub_parts = []
             general_parts = []
             if pivot == "image":
                 start_idx = 0
                 for end_idx in seps:
-                    sub_slice = logits_list[start_idx : end_idx + 1]
+                    sub_slice = logits[start_idx : end_idx + 1]
                     sub_parts.append(sub_slice)
-                    general_parts.append(logits_list[end_idx])
+                    general_parts.append(logits[end_idx])
                     start_idx = end_idx + 1
             elif pivot == "text":
-                for logits in image_logits:
+                for logits in logits:
                     general_parts.append(logits.pop())
                     sub_parts.append(logits)
             sub_avg = [sum(sp) / len(sp) for sp in sub_parts]
             sub_tensor = torch.tensor(sub_avg, dtype=torch.float32)
-            sub_softmax = torch.nn.functional.softmax(sub_tensor, dim=0)
+            sub_softmax = nn.functional.softmax(sub_tensor, dim=0)
             general_tensor = torch.tensor(general_parts, dtype=torch.float32)
-            general_softmax = torch.nn.functional.softmax(general_tensor, dim=0)
+            general_softmax = nn.functional.softmax(general_tensor, dim=0)
             final_percentages = {}
             for a in alpha:
                 general_scaled = general_softmax * float(a)
@@ -181,43 +136,15 @@ def inference(img, caption, pivot, alpha):
             img_inputs = processor(
                 images=image, return_tensors="pt", padding=True, truncation=True
             )
-            img_inputs = {k: v.to("cuda") for k, v in img_inputs.items()}
-            image_embeds = model.encode_image(img_inputs["pixel_values"])
-            granularities = ["general caption" for i in range(len(caption))]
-            captions = [c.lower() for c in caption]
-            gran_len = len(granularities)
-            if pivot == "image":
-                image_embeds = image_embeds.repeat(gran_len, 1)
-            elif pivot == "text":
-                repeated_image_embeds = []
-                for i in range(image_embeds.size(0)):
-                    repeated_embed = image_embeds[i].unsqueeze(0).repeat(gran_len, 1)
-                    repeated_image_embeds.append(repeated_embed)
-                all_granularities, all_captions = [], []
-                for i in range(len(image)):
-                    all_granularities.extend(granularities)
-                    all_captions.extend(captions)
-                image_embeds = torch.cat(repeated_image_embeds, dim=0)
-                granularities = all_granularities
-                captions = all_captions
-            gran_inputs = processor(
-                text=granularities, return_tensors="pt", padding=True, truncation=True
+            img_inputs = {k: v.to(device) for k, v in img_inputs.items()}
+            clip_prompt = [f"general caption: {c.lower()}" for c in caption]
+            text_inputs = processor(
+                text=clip_prompt, return_tensors="pt", padding=True, truncation=True
             )
-            gran_inputs = {k: v.to("cuda") for k, v in gran_inputs.items()}
-            gran_embeds = model.encode_text(
-                gran_inputs["input_ids"], gran_inputs["attention_mask"]
-            )
-            cap_inputs = processor(
-                text=captions, return_tensors="pt", padding=True, truncation=True
-            )
-            cap_inputs = {k: v.to("cuda") for k, v in cap_inputs.items()}
-            cap_embeds = model.encode_text(
-                cap_inputs["input_ids"], cap_inputs["attention_mask"]
-            )
-            logits = model(image_embeds, gran_embeds, cap_embeds)
-            logits_list = torch.diag(logits).tolist()
-            final_percentages = torch.nn.functional.softmax(
-                torch.tensor(logits_list, dtype=torch.float32), dim=0
+            text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
+            logits = model(img_inputs, text_inputs).tolist()
+            final_percentages = nn.functional.softmax(
+                torch.tensor(logits, dtype=torch.float32), dim=0
             )
         return final_percentages
     except Exception:
