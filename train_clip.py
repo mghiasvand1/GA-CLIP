@@ -18,7 +18,7 @@ SEED = 1
 BATCH_SIZE = 32
 EPOCHS = 5
 LR = 3e-4
-WD = 0.1
+WD = 0.01
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
 
 
