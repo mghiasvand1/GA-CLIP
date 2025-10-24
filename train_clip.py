@@ -73,14 +73,14 @@ class CLIP(nn.Module):
         torch.save(data, "trained_params.pth")
 
     @torch.no_grad()
-    def encode_image(self, pixel_values):
+    def _encode_image(self, pixel_values):
         image_outputs = self.vision_model(pixel_values).pooler_output
         image_proj = nn.functional.normalize(
             self.visual_projection(image_outputs), p=2, dim=-1
         )
         return image_proj
 
-    def encode_text(self, input_ids, attention_mask):
+    def _encode_text(self, input_ids, attention_mask):
         text_outputs = self.text_model(
             input_ids=input_ids, attention_mask=attention_mask
         ).pooler_output
@@ -89,9 +89,16 @@ class CLIP(nn.Module):
         )
         return text_proj
 
-    def forward(self, img_proj, text_proj):
-        logits = img_proj @ text_proj.t()
-        return logits
+    def forward(self, img_inputs, text_inputs, keep_indices_list):
+        image_embeds = self._encode_image(img_inputs["pixel_values"])
+        text_embeds = self._encode_text(
+            text_inputs["input_ids"], text_inputs["attention_mask"]
+        )
+        logits_list = []
+        for keep_indices in keep_indices_list:
+            logits = image_embeds @ text_embeds[keep_indices].t()
+            logits_list.append(logits)
+        return logits_list
 
 
 display(
@@ -326,21 +333,19 @@ def fine_tune():
                     ]
             text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
             with torch.autocast("cuda"):
-                image_embeds = model.encode_image(img_inputs["pixel_values"])
-                text_embeds = model.encode_text(
-                    text_inputs["input_ids"], text_inputs["attention_mask"]
+                logits_list = model(
+                    img_inputs, text_inputs, [keep_idx_L1, keep_idx_L2, keep_idx_L3]
                 )
-                logits = model(image_embeds, text_embeds[keep_idx_L1])
-                L1 = MPCL(logits, map_index["pos"]["i2pt"], map_index["pos"]["t2pi"])
-                logits = model(image_embeds, text_embeds[keep_idx_L2])
+                L1 = MPCL(
+                    logits_list[0], map_index["pos"]["i2pt"], map_index["pos"]["t2pi"]
+                )
                 L2 = NL(
-                    logits,
+                    logits_list[1],
                     map_index["pos_interneg"]["i2pt"],
                     map_index["pos_interneg"]["t2nt"],
                 )
-                logits = model(image_embeds, text_embeds[keep_idx_L3])
                 L3 = NL(
-                    logits,
+                    logits_list[2],
                     map_index["pos_intraneg"]["i2pt"],
                     map_index["pos_intraneg"]["t2nt"],
                 )
