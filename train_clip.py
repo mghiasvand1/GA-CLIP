@@ -5,6 +5,7 @@ from datasets import load_dataset
 from huggingface_hub import login
 import random, torch, json, os
 from torch.optim import AdamW
+from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 import torch.nn as nn
@@ -12,7 +13,6 @@ from math import ceil
 import numpy as np
 import requests
 
-MODEL_NAME = "openai/clip-vit-base-patch32"
 API_KEY = ""
 SEED = 1
 BATCH_SIZE = 32
@@ -36,7 +36,7 @@ def fix_seed(seed):
 class CLIP(nn.Module):
     def __init__(self):
         super().__init__()
-        clip = CLIPModel.from_pretrained(MODEL_NAME)
+        clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
         self.vision_model = clip.vision_model
         self.visual_projection = nn.Linear(768, 512, bias=False)
         self.text_model = clip.text_model
@@ -108,7 +108,7 @@ display(
 )
 login(token=API_KEY)
 fix_seed(SEED)
-processor = CLIPProcessor.from_pretrained(MODEL_NAME)
+processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 device = torch.device("cuda")
 model = CLIP().to(device)
 optimizer = AdamW(
@@ -263,7 +263,7 @@ def fine_tune():
     total_steps = len(loader) * EPOCHS
     pbar = tqdm(total=total_steps, unit="batch")
     epoch_losses = []
-    scaler = torch.GradScaler("cuda")
+    scaler = torch.GradScaler(device)
     model.train()
     for epoch in range(EPOCHS):
         epoch_loss = 0.0
@@ -332,7 +332,7 @@ def fine_tune():
                         if str(m["id"]) in x["status"]
                     ]
             text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-            with torch.autocast("cuda"):
+            with torch.autocast(device):
                 logits_list = model(
                     img_inputs, text_inputs, [keep_idx_L1, keep_idx_L2, keep_idx_L3]
                 )
