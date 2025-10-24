@@ -1,31 +1,26 @@
 from transformers import CLIPProcessor, CLIPModel, set_seed
 from torch.utils.data import Dataset, DataLoader, Sampler
-from IPython.display import display, HTML
+import random, torch, json, os, requests
 from datasets import load_dataset
 from huggingface_hub import login
-import random, torch, json, os
 from torch.optim import AdamW
 from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 import torch.nn as nn
 from math import ceil
-import numpy as np
-import requests
 
 API_KEY = ""
 SEED = 1
 BATCH_SIZE = 32
 EPOCHS = 5
 LR = 3e-4
-WD = 0.01
-LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
+LW = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
 
 
 def fix_seed(seed):
     set_seed(seed)
     random.seed(seed)
-    np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
@@ -76,17 +71,13 @@ class CLIP(nn.Module):
     def _encode_image(self, pixel_values):
         image_outputs = self.vision_model(pixel_values).pooler_output
         image_proj = nn.functional.normalize(
-            self.visual_projection(image_outputs), p=2, dim=-1
+            self.visual_projection(image_outputs), dim=-1
         )
         return image_proj
 
     def _encode_text(self, input_ids, attention_mask):
-        text_outputs = self.text_model(
-            input_ids=input_ids, attention_mask=attention_mask
-        ).pooler_output
-        text_proj = nn.functional.normalize(
-            self.text_projection(text_outputs), p=2, dim=-1
-        )
+        text_outputs = self.text_model(input_ids, attention_mask).pooler_output
+        text_proj = nn.functional.normalize(self.text_projection(text_outputs), dim=-1)
         return text_proj
 
     def forward(self, img_inputs, text_inputs, keep_indices_list):
@@ -101,19 +92,12 @@ class CLIP(nn.Module):
         return logits_list
 
 
-display(
-    HTML(
-        "<script>Jupyter.notebook.kernel.execute('config NotebookApp.iopub_msg_rate_limit=10000000000')</script>"
-    )
-)
 login(token=API_KEY)
 fix_seed(SEED)
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 device = torch.device("cuda")
 model = CLIP().to(device)
-optimizer = AdamW(
-    [p for p in model.parameters() if p.requires_grad], lr=LR, weight_decay=WD
-)
+optimizer = AdamW([p for p in model.parameters() if p.requires_grad], lr=LR)
 
 
 class ClipDataset(Dataset):
@@ -349,11 +333,7 @@ def fine_tune():
                     map_index["pos_intraneg"]["i2pt"],
                     map_index["pos_intraneg"]["t2nt"],
                 )
-                loss = (
-                    LOSS_WEIGHTS["L1"] * L1
-                    + LOSS_WEIGHTS["L2"] * L2
-                    + LOSS_WEIGHTS["L3"] * L3
-                )
+                loss = LW["L1"] * L1 + LW["L2"] * L2 + LW["L3"] * L3
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
