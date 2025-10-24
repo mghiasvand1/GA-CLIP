@@ -10,15 +10,14 @@ from tqdm import tqdm
 import torch.nn as nn
 from math import ceil
 import numpy as np
+import requests
 
-PARAMS_PATH = "/kaggle/working/trained_params.pth"
 MODEL_NAME = "openai/clip-vit-base-patch32"
-IMG_DATA = "/kaggle/input/coco-image-caption/train2014/train2014"
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 100
-EPOCHS = 10
-LR = 1e-5
+BATCH_SIZE = 32
+EPOCHS = 5
+LR = 3e-4
 WD = 0.1
 LOSS_WEIGHTS = {"L1": 1.0, "L2": 1.0, "L3": 1.0}
 
@@ -71,7 +70,7 @@ class CLIP(nn.Module):
             "text_model_biases": text_model_biases,
             "text_projection_weights": text_projection_weights,
         }
-        torch.save(data, PARAMS_PATH)
+        torch.save(data, "trained_params.pth")
 
     @torch.no_grad()
     def encode_image(self, pixel_values):
@@ -114,6 +113,9 @@ class ClipDataset(Dataset):
     def __init__(self):
         self.items_pos = []
         self.items_neg = {}
+        self.img_dir = Path("images")
+        self.dir_existed = self.img_dir.exists()
+        self.img_dir.mkdir(exist_ok=True)
         dataset = load_dataset(
             "mghiasvand1/GA-CLIP_data", data_files="clip_train.jsonl", split="train"
         )
@@ -131,6 +133,13 @@ class ClipDataset(Dataset):
                 if iid not in self.items_neg:
                     self.items_neg[iid] = []
                 self.items_neg[iid].append(data)
+            if not self.dir_existed:
+                img_path = self.img_dir / f"{str(iid).zfill(12)}.jpg"
+                if not img_path.exists():
+                    img_url = f"http://images.cocodataset.org/train2017/{str(iid).zfill(12)}.jpg"
+                    img_data = requests.get(img_url).content
+                    with open(img_path, "wb") as f:
+                        f.write(img_data)
         self.pos_indices_by_image = {}
         for idx, item in enumerate(self.items_pos):
             iid = item["image_id"]
@@ -142,7 +151,7 @@ class ClipDataset(Dataset):
 
     def __getitem__(self, idx):
         entry = self.items_pos[idx]
-        img_path = f"{IMG_DATA}/COCO_train2014_{str(entry['image_id']).zfill(12)}.jpg"
+        img_path = self.img_dir / f"{str(entry['image_id']).zfill(12)}.jpg"
         image = Image.open(img_path).convert("RGB")
         text = entry["text"]
         negs = self.items_neg.get(entry["image_id"])
@@ -247,6 +256,7 @@ def fine_tune():
     total_steps = len(loader) * EPOCHS
     pbar = tqdm(total=total_steps, unit="batch")
     epoch_losses = []
+    scaler = torch.GradScaler("cuda")
     model.train()
     for epoch in range(EPOCHS):
         epoch_loss = 0.0
@@ -315,32 +325,34 @@ def fine_tune():
                         if str(m["id"]) in x["status"]
                     ]
             text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
-            image_embeds = model.encode_image(img_inputs["pixel_values"])
-            text_embeds = model.encode_text(
-                text_inputs["input_ids"], text_inputs["attention_mask"]
-            )
-            logits = model(image_embeds, text_embeds[keep_idx_L1])
-            L1 = MPCL(logits, map_index["pos"]["i2pt"], map_index["pos"]["t2pi"])
-            logits = model(image_embeds, text_embeds[keep_idx_L2])
-            L2 = NL(
-                logits,
-                map_index["pos_interneg"]["i2pt"],
-                map_index["pos_interneg"]["t2nt"],
-            )
-            logits = model(image_embeds, text_embeds[keep_idx_L3])
-            L3 = NL(
-                logits,
-                map_index["pos_intraneg"]["i2pt"],
-                map_index["pos_intraneg"]["t2nt"],
-            )
-            loss = (
-                LOSS_WEIGHTS["L1"] * L1
-                + LOSS_WEIGHTS["L2"] * L2
-                + LOSS_WEIGHTS["L3"] * L3
-            )
+            with torch.autocast("cuda"):
+                image_embeds = model.encode_image(img_inputs["pixel_values"])
+                text_embeds = model.encode_text(
+                    text_inputs["input_ids"], text_inputs["attention_mask"]
+                )
+                logits = model(image_embeds, text_embeds[keep_idx_L1])
+                L1 = MPCL(logits, map_index["pos"]["i2pt"], map_index["pos"]["t2pi"])
+                logits = model(image_embeds, text_embeds[keep_idx_L2])
+                L2 = NL(
+                    logits,
+                    map_index["pos_interneg"]["i2pt"],
+                    map_index["pos_interneg"]["t2nt"],
+                )
+                logits = model(image_embeds, text_embeds[keep_idx_L3])
+                L3 = NL(
+                    logits,
+                    map_index["pos_intraneg"]["i2pt"],
+                    map_index["pos_intraneg"]["t2nt"],
+                )
+                loss = (
+                    LOSS_WEIGHTS["L1"] * L1
+                    + LOSS_WEIGHTS["L2"] * L2
+                    + LOSS_WEIGHTS["L3"] * L3
+                )
             optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             epoch_loss += loss.item()
             num_batches += 1
             pbar.update(1)
