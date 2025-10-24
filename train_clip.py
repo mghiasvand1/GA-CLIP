@@ -274,6 +274,7 @@ def fine_tune():
             img_inputs = {
                 k: v[unique_indices].to(device) for k, v in img_inputs.items()
             }
+            text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
             map_index = {
                 "pos": {"i2pt": {}, "t2pi": {}},
                 "pos_interneg": {"i2pt": {}, "t2nt": {}},
@@ -315,7 +316,6 @@ def fine_tune():
                         for j, x in enumerate(meta_pos_intraneg)
                         if str(m["id"]) in x["status"]
                     ]
-            text_inputs = {k: v.to(device) for k, v in text_inputs.items()}
             with torch.autocast(device):
                 logits_list = model(
                     img_inputs, text_inputs, [keep_idx_L1, keep_idx_L2, keep_idx_L3]
