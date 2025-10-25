@@ -1,26 +1,20 @@
 from transformers import (
-    set_seed,
     AutoTokenizer,
     AutoModelForSeq2SeqLM,
     DataCollatorForSeq2Seq,
     TrainingArguments,
     Trainer,
+    set_seed,
 )
+from datasets import load_dataset, Dataset, DatasetDict
 from huggingface_hub import login, create_repo
-from datasets import Dataset, DatasetDict
-from IPython.display import display, HTML
-import json
 
-TRAIN_DATA_FILE = "/kaggle/input/ga-clip_data/lm_train.jsonl"
-OUTPUT_DIR = "/kaggle/working"
-MODEL_NAME = "t5-small"
 API_KEY = ""
-HUB_MODEL_ID = "mghiasvand1/GA-CLIP_lm"
 SEED = 1
 MAX_SOURCE_LENGTH = 85
 MAX_TARGET_LENGTH = 100
 TRAINING_ARGS = TrainingArguments(
-    output_dir=OUTPUT_DIR,
+    output_dir="/kaggle/working",
     per_device_train_batch_size=16,
     num_train_epochs=5,
     learning_rate=3e-4,
@@ -29,27 +23,16 @@ TRAINING_ARGS = TrainingArguments(
     report_to=[],
     seed=SEED,
 )
-
-
-def load_jsonl(filepath):
-    data = []
-    with open(filepath, "r", encoding="utf-8") as f:
-        for line in f:
-            record = json.loads(line.strip())
-            data.append({"source": record["source"], "target": record["target"]})
-    return data
-
-
-display(
-    HTML(
-        "<script>Jupyter.notebook.kernel.execute('config NotebookApp.iopub_msg_rate_limit=10000000000')</script>"
-    )
-)
 login(token=API_KEY)
 set_seed(SEED)
-model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME).to("cuda")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-train_data = load_jsonl(TRAIN_DATA_FILE)
+model = AutoModelForSeq2SeqLM.from_pretrained("t5-small").to("cuda")
+tokenizer = AutoTokenizer.from_pretrained("t5-small")
+dataset = load_dataset(
+    "mghiasvand1/GA-CLIP_data", data_files="lm_train.jsonl", split="train"
+)
+train_data = [
+    {"source": record["source"], "target": record["target"]} for record in dataset
+]
 train_dataset = Dataset.from_list(train_data)
 ds = DatasetDict({"train": train_dataset})
 
@@ -86,10 +69,10 @@ def fine_tune():
         tokenizer=tokenizer,
         data_collator=data_collator,
     )
-    create_repo(HUB_MODEL_ID, private=True, exist_ok=True)
+    create_repo("mghiasvand1/GA-CLIP_lm", private=True, exist_ok=True)
     trainer.train()
-    trainer.save_model(OUTPUT_DIR)
-    tokenizer.save_pretrained(OUTPUT_DIR)
-    trained_model = AutoModelForSeq2SeqLM.from_pretrained(OUTPUT_DIR)
-    trained_model.push_to_hub(HUB_MODEL_ID)
-    tokenizer.push_to_hub(HUB_MODEL_ID)
+    trainer.save_model("/kaggle/working")
+    tokenizer.save_pretrained("/kaggle/working")
+    trained_model = AutoModelForSeq2SeqLM.from_pretrained("/kaggle/working")
+    trained_model.push_to_hub("mghiasvand1/GA-CLIP_lm")
+    tokenizer.push_to_hub("mghiasvand1/GA-CLIP_lm")
