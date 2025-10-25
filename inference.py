@@ -134,6 +134,8 @@ def inference(img, caption, pivot, alpha):
         logits = model(img_inputs, text_inputs).tolist()
         if pivot == "image":
             logits = logits[0]
+        elif pivot == "text":
+            logits = [_logits[0] for _logits in logits]
         final_percentages = nn.functional.softmax(
             torch.tensor(logits, dtype=torch.float32), dim=0
         )
