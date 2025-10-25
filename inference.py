@@ -4,13 +4,13 @@ from train_clip import CLIP
 import torch.nn as nn
 import torch
 
-login(token="")
+API_KEY = ""
+login(token=API_KEY)
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 device = torch.device("cuda")
 lm = AutoModelForSeq2SeqLM.from_pretrained("mghiasvand1/GA-CLIP_lm").to(device)
 tokenizer = AutoTokenizer.from_pretrained("mghiasvand1/GA-CLIP_lm")
-model = CLIP().to(device)
-model.load_params("linear_params.pth")
+model = CLIP().to(device).load_params("linear_params.pth")
 model.eval()
 
 
