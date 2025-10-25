@@ -15,18 +15,19 @@ MAX_SOURCE_LENGTH = 85
 MAX_TARGET_LENGTH = 100
 TRAINING_ARGS = TrainingArguments(
     output_dir="/kaggle/working",
-    per_device_train_batch_size=16,
+    per_device_train_batch_size=32,
     num_train_epochs=5,
-    learning_rate=3e-4,
+    learning_rate=5e-4,
     logging_strategy="epoch",
     save_strategy="epoch",
     report_to=[],
     seed=SEED,
+    fp16=True,
 )
 login(token=API_KEY)
 set_seed(SEED)
-model = AutoModelForSeq2SeqLM.from_pretrained("t5-small").to("cuda")
-tokenizer = AutoTokenizer.from_pretrained("t5-small")
+model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small").to("cuda")
+tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-small")
 dataset = load_dataset(
     "mghiasvand1/GA-CLIP_data", data_files="lm_train.jsonl", split="train"
 )
