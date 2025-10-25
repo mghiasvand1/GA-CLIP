@@ -4,7 +4,7 @@ from tqdm import tqdm
 import torch
 
 
-def eval_text_pivot(ds, a="0.5"):
+def eval_text_pivot(ds, a="1.0"):
     cor = tot = 0
     for ex in tqdm(ds):
         tot += 1
@@ -20,7 +20,7 @@ def eval_text_pivot(ds, a="0.5"):
     print(f"Text-pivot acc: {100*cor/tot:.2f}%")
 
 
-def eval_image_pivot(ds, a="0.5"):
+def eval_image_pivot(ds, a="1.0"):
     cor = tot = 0
     for ex in tqdm(ds):
         tot += 1
