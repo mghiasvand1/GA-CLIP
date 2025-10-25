@@ -4,21 +4,6 @@ from tqdm import tqdm
 import torch
 
 
-def eval_text_pivot(ds, a="1.0"):
-    cor = tot = 0
-    for ex in tqdm(ds):
-        tot += 1
-        x = inference([ex["image_0"], ex["image_1"]], ex["caption_0"], "text", [a])
-        y = inference([ex["image_0"], ex["image_1"]], ex["caption_1"], "text", [a])
-        x, y = (
-            x[a] if isinstance(x, dict) else x,
-            y[a] if isinstance(y, dict) else y,
-        )
-        if torch.argmax(x) == 0 and torch.argmax(y) == 1:
-            cor += 1
-    print(f"{100*cor/tot:.2f}%")
-
-
 def eval_image_pivot(ds, a="1.0"):
     cor = tot = 0
     for ex in tqdm(ds):
@@ -34,6 +19,21 @@ def eval_image_pivot(ds, a="1.0"):
     print(f"{100*cor/tot:.2f}%")
 
 
+def eval_text_pivot(ds, a="1.0"):
+    cor = tot = 0
+    for ex in tqdm(ds):
+        tot += 1
+        x = inference([ex["image_0"], ex["image_1"]], ex["caption_0"], "text", [a])
+        y = inference([ex["image_0"], ex["image_1"]], ex["caption_1"], "text", [a])
+        x, y = (
+            x[a] if isinstance(x, dict) else x,
+            y[a] if isinstance(y, dict) else y,
+        )
+        if torch.argmax(x) == 0 and torch.argmax(y) == 1:
+            cor += 1
+    print(f"{100*cor/tot:.2f}%")
+
+
 ds = load_dataset("facebook/winoground", split="test")
-eval_text_pivot(ds)
 eval_image_pivot(ds)
+eval_text_pivot(ds)
