@@ -36,7 +36,6 @@ def eval_image_pivot(ds, a="1.0"):
     print(f"Image-pivot acc: {100*cor/tot:.2f}%")
 
 
-if __name__ == "__main__":
-    ds = load_dataset("facebook/winoground", split="test")
-    eval_text_pivot(ds)
-    eval_image_pivot(ds)
+ds = load_dataset("facebook/winoground", split="test")
+eval_text_pivot(ds)
+eval_image_pivot(ds)
