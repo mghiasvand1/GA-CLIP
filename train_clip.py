@@ -55,6 +55,7 @@ class CLIP(nn.Module):
         text_projection_state = self.text_projection.state_dict()
         text_projection_state.update(params.get("text_projection_weights"))
         self.text_projection.load_state_dict(text_projection_state)
+        return self
 
     def save_params(self):
         text_model_biases = {
