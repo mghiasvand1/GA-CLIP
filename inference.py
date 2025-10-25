@@ -126,7 +126,11 @@ def inference(img, caption, pivot, alpha):
             images=image, return_tensors="pt", padding=True, truncation=True
         )
         img_inputs = {k: v.to(device) for k, v in img_inputs.items()}
-        clip_prompt = [f"general caption: {c.lower()}" for c in caption]
+        clip_prompt = (
+            [f"general caption: {c.lower()}" for c in caption]
+            if pivot == "image"
+            else f"general caption: {caption.lower()}"
+        )
         text_inputs = processor(
             text=clip_prompt, return_tensors="pt", padding=True, truncation=True
         )
