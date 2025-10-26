@@ -4,13 +4,14 @@ from train_clip import CLIP
 import torch.nn as nn
 import torch
 
+TRAINED_PARAMS_PATH = "/kaggle/input/ga-clip-params/trained_params.pth"
 API_KEY = ""
 login(token=API_KEY)
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 device = torch.device("cuda")
 lm = AutoModelForSeq2SeqLM.from_pretrained("mghiasvand1/GA-CLIP_lm").to(device)
 tokenizer = AutoTokenizer.from_pretrained("mghiasvand1/GA-CLIP_lm")
-model = CLIP().to(device).load_params("linear_params.pth")
+model = CLIP().to(device).load_params(TRAINED_PARAMS_PATH)
 model.eval()
 
 
