@@ -1,8 +1,8 @@
 from transformers import CLIPProcessor, CLIPModel, set_seed
 from torch.utils.data import Dataset, DataLoader, Sampler
-import random, torch, json, os, requests
+import random, torch, json, os, requests, tempfile
+from huggingface_hub import upload_file
 from datasets import load_dataset
-from huggingface_hub import login
 from torch.optim import AdamW
 from pathlib import Path
 from PIL import Image
@@ -66,7 +66,16 @@ class CLIP(nn.Module):
             "text_model_biases": text_model_biases,
             "text_projection_weights": text_projection_weights,
         }
-        torch.save(data, "trained_params.pth")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_path = os.path.join(tmpdir, "trained_params.pth")
+            torch.save(data, save_path)
+            upload_file(
+                path_or_fileobj=save_path,
+                repo_id="mghiasvand1/GA-CLIP_clip",
+                path_in_repo="trained_params.pth",
+                repo_type="model",
+                token=API_KEY,
+            )
 
     @torch.no_grad()
     def _encode_image(self, pixel_values):
@@ -96,7 +105,6 @@ class CLIP(nn.Module):
         return logits
 
 
-login(token=API_KEY)
 fix_seed(SEED)
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 device = torch.device("cuda")
