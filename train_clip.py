@@ -1,7 +1,7 @@
 from transformers import CLIPProcessor, CLIPModel, set_seed
 from torch.utils.data import Dataset, DataLoader, Sampler
 import random, torch, json, os, requests, tempfile
-from huggingface_hub import upload_file
+from huggingface_hub import login, upload_file
 from datasets import load_dataset
 from torch.optim import AdamW
 from pathlib import Path
@@ -74,7 +74,6 @@ class CLIP(nn.Module):
                 repo_id="mghiasvand1/GA-CLIP_clip",
                 path_in_repo="trained_params.pth",
                 repo_type="model",
-                token=API_KEY,
             )
 
     @torch.no_grad()
@@ -106,6 +105,7 @@ class CLIP(nn.Module):
 
 
 fix_seed(SEED)
+login(token=API_KEY)
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 device = torch.device("cuda")
 model = CLIP().to(device)
