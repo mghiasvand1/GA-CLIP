@@ -8,7 +8,7 @@ API_KEY = ""
 login(token=API_KEY)
 TRAINED_PARAMS_PATH = hf_hub_download(
     repo_id="mghiasvand1/GA-CLIP_clip",
-    filename="trained_params/main.pth",
+    filename="trained_params.pth",
     repo_type="model",
 )
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
