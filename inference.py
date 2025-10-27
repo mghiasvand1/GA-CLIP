@@ -1,12 +1,16 @@
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, CLIPProcessor
-from huggingface_hub import login
+from huggingface_hub import login, hf_hub_download
 from train_clip import CLIP
 import torch.nn as nn
 import torch
 
-TRAINED_PARAMS_PATH = "/kaggle/input/ga-clip-params/trained_params.pth"
 API_KEY = ""
 login(token=API_KEY)
+TRAINED_PARAMS_PATH = hf_hub_download(
+    repo_id="mghiasvand1/GA-CLIP_clip",
+    filename="trained_params/main.pth",
+    repo_type="model",
+)
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 device = torch.device("cuda")
 lm = AutoModelForSeq2SeqLM.from_pretrained("mghiasvand1/GA-CLIP_lm").to(device)
