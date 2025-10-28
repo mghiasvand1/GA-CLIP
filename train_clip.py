@@ -12,7 +12,7 @@ from math import ceil
 
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 32
+BATCH_SIZE = 25
 EPOCHS = 3
 LR = 5e-4
 LW = {"L1": 0.5, "L2": 0.2, "L3": 0.3}
