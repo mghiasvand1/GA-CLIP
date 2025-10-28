@@ -242,7 +242,8 @@ def NL(logits, i2tp, t2nt):
             denominator = numerator + torch.sum(torch.exp(neg_similarities))
             loss = -torch.log(numerator / denominator)
             img_losses.append(loss)
-        batch_losses.append(torch.stack(img_losses).mean())
+        if img_losses:
+            batch_losses.append(torch.stack(img_losses).mean())
     return torch.stack(batch_losses).mean()
 
 
