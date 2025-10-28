@@ -259,7 +259,7 @@ def fine_tune():
     total_steps = len(loader) * EPOCHS
     pbar = tqdm(total=total_steps, unit="batch")
     epoch_losses = []
-    scaler = torch.GradScaler(device)
+    scaler = torch.GradScaler("cuda")
     model.train()
     for epoch in range(EPOCHS):
         epoch_loss = 0.0
@@ -328,7 +328,7 @@ def fine_tune():
                         for j, x in enumerate(meta_pos_intraneg)
                         if str(m["id"]) in x["status"]
                     ]
-            with torch.autocast(device):
+            with torch.autocast("cuda"):
                 logits_list = model(
                     img_inputs, text_inputs, [keep_idx_L1, keep_idx_L2, keep_idx_L3]
                 )
