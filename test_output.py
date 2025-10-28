@@ -23,8 +23,8 @@ def eval_image_pivot(ds):
     for a in ALPHAS:
         a_str = str(a)
         results[a_str] = 100 * results[a_str] / tot
-    top_10 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
-    for alpha_val, accuracy in top_10:
+    top_5 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:5]
+    for alpha_val, accuracy in top_5:
         print(f"{alpha_val}: {accuracy:.2f}%")
 
 
@@ -43,8 +43,8 @@ def eval_text_pivot(ds):
     for a in ALPHAS:
         a_str = str(a)
         results[a_str] = 100 * results[a_str] / tot
-    top_10 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:10]
-    for alpha_val, accuracy in top_10:
+    top_5 = sorted(results.items(), key=lambda x: x[1], reverse=True)[:5]
+    for alpha_val, accuracy in top_5:
         print(f"{alpha_val}: {accuracy:.2f}%")
 
 
