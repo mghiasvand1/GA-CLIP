@@ -76,31 +76,23 @@ class CLIP(nn.Module):
                 repo_type="model",
             )
 
-    @torch.no_grad()
-    def _encode_image(self, pixel_values):
-        image_outputs = self.vision_model(pixel_values).pooler_output
-        image_proj = nn.functional.normalize(
-            self.visual_projection(image_outputs), dim=-1
-        )
-        return image_proj
-
-    def _encode_text(self, input_ids, attention_mask):
-        text_outputs = self.text_model(input_ids, attention_mask).pooler_output
-        text_proj = nn.functional.normalize(self.text_projection(text_outputs), dim=-1)
-        return text_proj
-
     def forward(self, img_inputs, text_inputs, keep_indices_list=[]):
-        image_embeds = self._encode_image(img_inputs["pixel_values"])
-        text_embeds = self._encode_text(
+        with torch.no_grad():
+            image_outputs = self.vision_model(img_inputs["pixel_values"]).pooler_output
+            image_proj = nn.functional.normalize(
+                self.visual_projection(image_outputs), dim=-1
+            )
+        text_outputs = self.text_model(
             text_inputs["input_ids"], text_inputs["attention_mask"]
-        )
+        ).pooler_output
+        text_proj = nn.functional.normalize(self.text_projection(text_outputs), dim=-1)
         if keep_indices_list:
             logits = []
             for indices in keep_indices_list:
-                _logits = image_embeds @ text_embeds[indices].t()
+                _logits = image_proj @ text_proj[indices].t()
                 logits.append(_logits)
         else:
-            logits = image_embeds @ text_embeds.t()
+            logits = image_proj @ text_proj.t()
         return logits
 
 
