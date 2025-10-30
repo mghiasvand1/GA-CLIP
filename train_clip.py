@@ -39,31 +39,23 @@ class CLIP(nn.Module):
         with torch.no_grad():
             self.visual_projection.weight.copy_(clip.visual_projection.weight)
             self.text_projection.weight.copy_(clip.text_projection.weight)
-        for p in list(self.vision_model.parameters()) + list(
-            self.visual_projection.parameters()
+        for p in (
+            list(self.vision_model.parameters())
+            + list(self.visual_projection.parameters())
+            + list(self.text_model.parameters())
         ):
             p.requires_grad = False
-        for name, param in self.text_model.named_parameters():
-            if "bias" not in name:
-                param.requires_grad = False
 
     def load_params(self, path):
         params = torch.load(path)
-        text_model_state = self.text_model.state_dict()
-        text_model_state.update(params.get("text_model_biases"))
-        self.text_model.load_state_dict(text_model_state)
         text_projection_state = self.text_projection.state_dict()
         text_projection_state.update(params.get("text_projection_weights"))
         self.text_projection.load_state_dict(text_projection_state)
         return self
 
     def save_params(self):
-        text_model_biases = {
-            k: v for k, v in self.text_model.state_dict().items() if "bias" in k
-        }
         text_projection_weights = self.text_projection.state_dict()
         data = {
-            "text_model_biases": text_model_biases,
             "text_projection_weights": text_projection_weights,
         }
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -82,9 +74,9 @@ class CLIP(nn.Module):
             image_proj = nn.functional.normalize(
                 self.visual_projection(image_outputs), dim=-1
             )
-        text_outputs = self.text_model(
-            text_inputs["input_ids"], text_inputs["attention_mask"]
-        ).pooler_output
+            text_outputs = self.text_model(
+                text_inputs["input_ids"], text_inputs["attention_mask"]
+            ).pooler_output
         text_proj = nn.functional.normalize(self.text_projection(text_outputs), dim=-1)
         if keep_indices_list:
             logits = []
