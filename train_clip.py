@@ -15,7 +15,7 @@ SEED = 1
 BATCH_SIZE = 128
 EPOCHS = 3
 LR = 5e-4
-LW = {"L1": 0.25, "L2": 0.3, "L3": 0.45}
+LW = {"L1": 0.19, "L2": 0.33, "L3": 0.48}
 
 
 def fix_seed(seed):
