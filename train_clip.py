@@ -12,10 +12,10 @@ from math import ceil
 
 API_KEY = ""
 SEED = 1
-BATCH_SIZE = 128
+BATCH_SIZE = 80
 EPOCHS = 3
 LR = 5e-4
-LW = {"L1": 0.187, "L2": 0.336, "L3": 0.477}
+LW = {"L1": 0.2, "L2": 0.33, "L3": 0.47}
 
 
 def fix_seed(seed):
@@ -100,9 +100,6 @@ class ClipDataset(Dataset):
     def __init__(self):
         self.items_pos = []
         self.items_neg = {}
-        self.img_dir = Path("images")
-        self.dir_existed = self.img_dir.exists()
-        self.img_dir.mkdir(exist_ok=True)
         dataset = load_dataset(
             "mghiasvand1/GA-CLIP_data", data_files="clip_train.jsonl", split="train"
         )
@@ -120,13 +117,6 @@ class ClipDataset(Dataset):
                 if iid not in self.items_neg:
                     self.items_neg[iid] = []
                 self.items_neg[iid].append(data)
-            if not self.dir_existed:
-                img_path = self.img_dir / f"{str(iid).zfill(12)}.jpg"
-                if not img_path.exists():
-                    img_url = f"http://images.cocodataset.org/train2017/{str(iid).zfill(12)}.jpg"
-                    img_data = requests.get(img_url).content
-                    with open(img_path, "wb") as f:
-                        f.write(img_data)
         self.pos_indices_by_image = {}
         for idx, item in enumerate(self.items_pos):
             iid = item["image_id"]
@@ -138,16 +128,11 @@ class ClipDataset(Dataset):
 
     def __getitem__(self, idx):
         entry = self.items_pos[idx]
-        img_path = self.img_dir / f"{str(entry['image_id']).zfill(12)}.jpg"
+        img_path = f"/kaggle/input/coco-image-caption/train2014/train2014/COCO_train2014_{str(entry['image_id']).zfill(12)}.jpg"
         image = Image.open(img_path).convert("RGB")
         text = entry["text"]
         negs = self.items_neg.get(entry["image_id"])
-        return {
-            **entry,
-            "image": image,
-            "text": text,
-            "negatives": negs,
-        }
+        return {**entry, "image": image, "text": text, "negatives": negs}
 
 
 class UniqueImageBatchSampler(Sampler):
